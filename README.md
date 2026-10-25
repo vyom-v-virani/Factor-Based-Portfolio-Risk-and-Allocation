@@ -14,6 +14,7 @@ sanity checks, and all results are written to `outputs/`.
 pip install -r requirements.txt
 python run_all.py                  # runs Phases 1-7 in order and prints the checks passed for each
 python run_phase5.py --level 3     # one risk-dial portfolio (any level from 1 to 5, decimals allowed)
+python recommend.py --level 3      # the current allocation for a risk level (see Current allocation)
 pytest                             # fast unit tests, no network needed
 ```
 
@@ -218,6 +219,93 @@ weights on actual returns and are not out-of-sample (both windows fall inside or
 - **The linear market stress understates the COVID crash for the conservative end.** A -20% market shock implies -2.8% for level 1, but replaying 2020-02-19 to 2020-03-23 gives -10.0%; for SPY the linear estimate is -19.5% against a replay of -33.4%.
 - **Transaction costs are small at monthly rebalancing.** Cost drag is at most 0.03% of CAGR per year across strategies, and moving from 0 to 10 bps changes net Sharpe by at most 0.01 (for example level 1: 0.29 to 0.28).
 
+## Current allocation
+
+```bash
+python recommend.py --level 3 [--asof 2026-07-31] [--refresh]
+```
+
+`recommend.py` turns the risk dial into today's allocation. It takes the trailing 756 trading days of returns ending on the
+as-of date (default: the last price date; only data on or before that date is used), fits the Ledoit-Wolf covariance, builds the
+dial portfolio for the requested level, and compares it with the same allocation as of the previous month-end. It prints the
+asset-class split, the ETF weights, the annualized volatility and risk shares, the portfolio's Fama-French exposures and its
+1-year 95% VaR and CVaR, then runs its checks. It also saves `outputs/current_allocation_level<L>.csv` and
+`outputs/allocation_history_level<L>.png` (the asset-class split of the stored Phase 7 walk-forward weights over time).
+`--refresh` clears the cached downloads and fetches fresh data.
+
+The tail risk is the Phase 6 block bootstrap (same settings, weights held fixed), run twice. The **full-history** estimate resamples every
+aligned day from the start of the dataset through the as-of date (limited to the last Ken French date, because the factor model
+needs factors) and is the **primary risk estimate**. The **last-3-years** estimate uses only the trailing window. The two differ because
+the full history contains the 2020 crash and the 2022 selloff, while the last three years do not, so the recent-window number can show little
+or no loss at the 5th percentile and understates risk when the window was calm. The Ken French file lags the prices, so the factor
+regressions and both bootstraps use only days that have factor data (the printed notes give the dates and day counts).
+
+Two checks compare against stored results: the allocation as of the last Phase 7 rebalance must equal the stored Phase 7 weights (levels 1,
+3 and 5), and the full-history VaR and CVaR for level 5 as of the end of the train period must equal the Phase 6 level 5 values. After
+`--refresh`, re-run `python run_all.py` before expecting those two checks to pass.
+
+Example output (`python recommend.py --level 3`, data through 2026-10-23):
+
+```
+=== CURRENT ALLOCATION: LEVEL 3 (Balanced) ===
+As of:            2026-10-23
+Window:           2023-10-19 -> 2026-10-23 (756 trading days)
+Last month-end:   2026-09-30 (used for the change columns)
+
+--- Asset-class split ---
+             weight %  last month %  change (pp)
+asset_class                                     
+Equity           54.0          54.2         -0.2
+Rates            15.0          15.0          0.0
+Credit           29.9          29.7          0.2
+Gold              1.1           1.1          0.0
+
+--- ETF weights (rows with a non-zero weight now or last month) ---
+        weight %  last month %  change (pp)
+Ticker                                     
+SPY          6.2           6.3          0.0
+QQQ          6.2           6.2          0.0
+IWM          6.2           6.3          0.0
+EFA          6.2           6.2          0.0
+EEM          6.2           6.2          0.0
+IEF         15.0          15.0          0.0
+LQD         14.9          14.7          0.2
+HYG         15.0          15.0          0.0
+GLD          1.1           1.1          0.0
+XLE          9.8           9.8          0.0
+XLF          6.7           6.9         -0.2
+XLK          6.2           6.2          0.0
+
+Annualized volatility of this allocation over the window: 9.3%
+Share of risk by asset class: Equity 82.9%, Rates 3.2%, Credit 13.1%, Gold 0.8%
+
+--- 1-year tail risk (block bootstrap: 10,000 paths x 252 days, block 10, seed 42; weights held fixed) ---
+Full history (2014-01-03 to 2026-08-31, 3,183 days)  [primary risk estimate]
+    95% VaR: 9.6%   95% CVaR: 15.4%   5th-percentile 1-year return: -9.6%
+Last 3 years only (2023-10-19 to 2026-08-31, 718 days)  [recent regime; understates risk when the window was calm]
+    95% VaR: no loss at the 5th percentile   95% CVaR: 3.2%   5th-percentile 1-year return: +0.8%
+
+Factor exposures (Fama-French regressions on the last-3-years sample): Mkt-RF 0.57   SMB 0.07   HML 0.10
+That sample is the 718 of 756 window days that have Ken French data.
+Last factor observation: 2026-08-31 (Ken French data lags prices; last price date 2026-10-23)
+
+Risk-targeted allocation based on the past 3 years; not a return forecast and not investment advice.
+
+Saved: outputs/current_allocation_level3.csv, outputs/allocation_history_level3.png
+
+=== CHECKS ===
+[PASS] weights sum to 1, are all >= 0, and none exceeds MAX_WEIGHT  (sum = 1.0000000000, min = 9.66e-18, max = 0.1500)
+[PASS] last return date used is on or before the as-of date, and exactly WINDOW_DAYS observations  (last used 2026-10-23 <= 2026-10-23, 756 observations)
+[PASS] asset-class split sums to 100% and the ETF weights roll up to it exactly  (split sums to 100.00%, max roll-up diff 0.0e+00)
+[PASS] changes vs last month sum to zero across ETFs  (sum of changes = -3.47e-17)
+[PASS] consistency: allocation as of the last Phase 7 rebalance (2026-07-31) equals the stored Phase 7 weights for levels 1, 3 and 5 (max abs diff < 1e-8)  (max abs diff by level: 0.0e+00, 0.0e+00, 0.0e+00)
+[PASS] full-history 95% VaR and CVaR for level 5 as of 2022-11-07 (end of the train period) equal the Phase 6 level 5 values (within 1e-6)  (VaR 0.19043190 vs 0.19043190, CVaR 0.26924991 vs 0.26924991)
+
+6/6 checks passed.
+```
+
+> Risk-targeted allocation based on the past 3 years; not a return forecast and not investment advice.
+
 ## Limitations
 
 1. **The bootstrap only reproduces risks seen in the sample.** It resamples historical dates, so it cannot produce a loss larger than
@@ -266,10 +354,11 @@ run_phase5.py      Phase 5: risk dial (supports --level)
 run_phase6.py      Phase 6: bootstrap tail risk, factor exposures, stress and scenario replay
 run_phase7.py      Phase 7: walk-forward backtest, cost sensitivity, look-ahead test
 run_all.py         runs Phases 1-7 in order and prints the checks passed per phase (--refresh re-downloads data)
-tests/             pytest unit tests (synthetic data, no network)
+recommend.py       current allocation for a risk level (--level, --asof, --refresh), with checks
+tests/             pytest unit tests (synthetic data, no network), including test_recommend.py
 requirements.txt   dependencies with minimum versions
 pytest.ini         pytest settings
-outputs/           all result tables and charts written by the phase scripts (committed)
+outputs/           all result tables and charts written by the phase scripts and recommend.py (committed)
 data_cache/        cached downloads (git-ignored)
 ```
 
