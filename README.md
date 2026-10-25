@@ -18,7 +18,7 @@ python recommend.py --level 3      # the current allocation for a risk level (se
 pytest                             # fast unit tests, no network needed
 ```
 
-`python run_all.py --refresh` deletes the cached downloads first so the data is downloaded again (results will then reflect the newest data).
+All results are computed on the data snapshot committed in `data_snapshot/`. `python run_all.py --refresh` downloads fresh prices and factors and overwrites the snapshot first; numbers then change slightly, because Yahoo revises adjusted prices (and newer dates are added).
 
 ## Data
 
@@ -28,6 +28,7 @@ pytest                             # fast unit tests, no network needed
   - Credit: LQD, HYG
   - Gold: GLD
 - **Prices:** adjusted close prices from Yahoo Finance via `yfinance` (requested from 2014-01-01).
+- **Snapshot:** the files behind every result are committed in `data_snapshot/`: `prices.parquet` (13 tickers, 2014-01-02 to 2026-10-23) and `ff_factors_daily.parquet` (Ken French factors, last observation 2026-08-31). The loaders read the snapshot and never download unless asked with `--refresh`; a missing snapshot raises an error. Refreshing overwrites the snapshot and changes the numbers slightly because Yahoo revises adjusted prices.
 - **Factors:** Ken French daily Fama-French 3-factor file (`F-F_Research_Data_Factors_daily`; Mkt-RF, SMB, HML, RF), converted from percent to decimals.
 - **Sample:** simple daily returns on the dates where both sources have data. The first return date is 2014-01-03 (`outputs/residuals.parquet`)
   and the last is 2026-08-31 (`outputs/daily_returns_phase7.parquet`).
@@ -38,7 +39,7 @@ pytest                             # fast unit tests, no network needed
 
 ## Methodology
 
-**Phase 1 - Data pipeline** (`data.py`, `run_phase1.py`). Download and cache prices and factors, compute simple returns, subtract RF
+**Phase 1 - Data pipeline** (`data.py`, `run_phase1.py`). Load the committed price and factor snapshot (downloaded only with `--refresh`), compute simple returns, subtract RF
 to get excess returns, inner-join on dates (dropping rows with NaN and logging how many), and split chronologically. Sanity checks
 cover NaNs, aligned indexes, factor scale, SPY volatility, TLT/SPY correlation and train-before-test ordering.
 
@@ -231,7 +232,7 @@ dial portfolio for the requested level, and compares it with the same allocation
 asset-class split, the ETF weights, the annualized volatility and risk shares, the portfolio's Fama-French exposures and its
 1-year 95% VaR and CVaR, then runs its checks. It also saves `outputs/current_allocation_level<L>.csv` and
 `outputs/allocation_history_level<L>.png` (the asset-class split of the stored Phase 7 walk-forward weights over time).
-`--refresh` clears the cached downloads and fetches fresh data.
+`--refresh` downloads fresh prices and factors and overwrites `data_snapshot/`.
 
 The tail risk is the Phase 6 block bootstrap (same settings, weights held fixed), run twice. The **full-history** estimate resamples every
 aligned day from the start of the dataset through the as-of date (limited to the last Ken French date, because the factor model
@@ -340,7 +341,7 @@ None of the following has been implemented or tested.
 
 ```
 config.py          all settings (tickers, dates, split, dial, simulation, backtest)
-data.py            download/cache prices and Ken French factors, build returns, chronological train/test split
+data.py            load prices and Ken French factors from data_snapshot/ (download only with refresh), build returns, train/test split
 models.py          factor regressions, Ledoit-Wolf covariance, equal weight, min-variance, risk parity,
                    risk contributions, asset-class summary, risk dial
 simulate.py        factor-model reconstruction, block bootstrap, VaR/CVaR, exposures, linear stress, scenario replay
@@ -353,17 +354,17 @@ run_phase4.py      Phase 4: risk contributions by ticker and asset class
 run_phase5.py      Phase 5: risk dial (supports --level)
 run_phase6.py      Phase 6: bootstrap tail risk, factor exposures, stress and scenario replay
 run_phase7.py      Phase 7: walk-forward backtest, cost sensitivity, look-ahead test
-run_all.py         runs Phases 1-7 in order and prints the checks passed per phase (--refresh re-downloads data)
+run_all.py         runs Phases 1-7 in order and prints the checks passed per phase (--refresh re-downloads the data snapshot)
 recommend.py       current allocation for a risk level (--level, --asof, --refresh), with checks
 tests/             pytest unit tests (synthetic data, no network), including test_recommend.py
 requirements.txt   dependencies with minimum versions
 pytest.ini         pytest settings
 outputs/           all result tables and charts written by the phase scripts and recommend.py (committed)
-data_cache/        cached downloads (git-ignored)
+data_snapshot/     committed price and factor files used for all results (prices.parquet, ff_factors_daily.parquet)
 ```
 
 ## Reproducibility
 
 - The bootstrap uses a fixed seed (`SEED = 42`), so Phase 6 is reproducible, and the tests and the Phase 6 check confirm identical output for the same seed.
-- Downloads are cached in `data_cache/` and reused on later runs, so results do not change unless the cache is deleted or `python run_all.py --refresh` is used. A fresh download will include newer data and can restate adjusted prices slightly.
+- The data snapshot in `data_snapshot/` is committed, so a fresh clone reproduces the results without downloading anything. Results change only if the snapshot is overwritten with `python run_all.py --refresh` (or `recommend.py --refresh`); a fresh download includes newer data and can restate adjusted prices slightly.
 - Optimizer, covariance and regression steps are deterministic given the data.

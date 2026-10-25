@@ -6,25 +6,37 @@ import yfinance as yf
 import config
 
 
-def load_prices():
-    # adjusted close prices, one column per ticker; read from the cache file if it exists
-    name = "prices_" + "-".join(sorted(config.TICKERS)) + "_" + config.START_DATE + "_" + str(config.END_DATE or "today") + ".parquet"
-    path = os.path.join(config.CACHE_DIR, name)
-    if os.path.exists(path):
-        return pd.read_parquet(path)
+def missing_snapshot_error(path):
+    # clear error for a missing snapshot file (the loaders never download unless refresh=True)
+    return FileNotFoundError(f"Data snapshot file {path} is missing. Restore it from the repository, "
+                             f"or download it with refresh=True (run_all.py --refresh).")
+
+
+def load_prices(refresh=False):
+    # adjusted close prices, one column per ticker, from the data snapshot; downloaded only when refresh=True
+    path = os.path.join(config.SNAPSHOT_DIR, "prices.parquet")
+    if not refresh:
+        if not os.path.exists(path):
+            raise missing_snapshot_error(path)
+        prices = pd.read_parquet(path)
+        if list(prices.columns) != config.TICKERS:
+            raise ValueError(f"Snapshot tickers {list(prices.columns)} differ from config.TICKERS; use refresh=True.")
+        return prices
     raw = yf.download(config.TICKERS, start=config.START_DATE, end=config.END_DATE, auto_adjust=True, progress=False)
     prices = raw["Close"][config.TICKERS]
     prices.index = pd.to_datetime(prices.index).tz_localize(None)
     prices.index.name = "Date"
-    os.makedirs(config.CACHE_DIR, exist_ok=True)
+    os.makedirs(config.SNAPSHOT_DIR, exist_ok=True)
     prices.to_parquet(path)
     return prices
 
 
-def load_ff_factors():
-    # Ken French daily Mkt-RF, SMB, HML, RF as decimals; read from the cache file if it exists
-    path = os.path.join(config.CACHE_DIR, "ff_factors_daily.parquet")
-    if os.path.exists(path):
+def load_ff_factors(refresh=False):
+    # Ken French daily Mkt-RF, SMB, HML, RF as decimals, from the data snapshot; downloaded only when refresh=True
+    path = os.path.join(config.SNAPSHOT_DIR, "ff_factors_daily.parquet")
+    if not refresh:
+        if not os.path.exists(path):
+            raise missing_snapshot_error(path)
         factors = pd.read_parquet(path)
     else:
         raw = pd.read_csv(config.FF_URL, compression="zip", skiprows=3, index_col=0)
@@ -33,7 +45,7 @@ def load_ff_factors():
         raw.index.name = "Date"
         raw.columns = raw.columns.str.strip()
         factors = raw[config.FACTOR_COLS + ["RF"]].astype(float) / 100
-        os.makedirs(config.CACHE_DIR, exist_ok=True)
+        os.makedirs(config.SNAPSHOT_DIR, exist_ok=True)
         factors.to_parquet(path)
     return factors.loc[config.START_DATE:config.END_DATE]
 

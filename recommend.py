@@ -16,9 +16,9 @@ from models import (asset_class_summary, build_dial_portfolios, dial_profile, fi
 from simulate import factor_exposures, reconstruct_returns, risk_stats, simulate_portfolios
 
 
-def load_price_returns():
+def load_price_returns(refresh=False):
     # daily simple returns from all available prices (not cut back to the factor dates)
-    prices = load_prices()
+    prices = load_prices(refresh)
     return prices.pct_change(fill_method=None).iloc[1:].dropna()
 
 
@@ -129,13 +129,10 @@ def plot_history(split, level, path):
 
 
 def run(level, asof_text, refresh):
+    returns = load_price_returns(refresh)
+    factors = load_ff_factors(refresh)
     if refresh:
-        for name in os.listdir(config.CACHE_DIR):
-            if name.endswith(".parquet"):
-                os.remove(os.path.join(config.CACHE_DIR, name))
-        print("Cleared cached downloads; fetching fresh prices and factors.")
-    returns = load_price_returns()
-    factors = load_ff_factors()
+        print(f"Downloaded fresh prices and factors; overwrote {config.SNAPSHOT_DIR}/")
 
     # the as-of date is the latest trading day on or before the requested date
     if asof_text is None:
@@ -293,13 +290,13 @@ def main():
     parser = argparse.ArgumentParser(description="Current risk-dial allocation from the trailing window.")
     parser.add_argument("--level", type=float, required=True, help="risk level from 1 to 5 (decimals allowed)")
     parser.add_argument("--asof", default=None, help="compute the allocation as of this date (default: last price date)")
-    parser.add_argument("--refresh", action="store_true", help="download fresh prices and factors and overwrite the snapshot")
+    parser.add_argument("--refresh", action="store_true", help="download fresh prices and factors and overwrite the data snapshot")
     args = parser.parse_args()
     try:
         # same validation and message as the risk dial, checked before anything is downloaded or deleted
         weights_for_level(args.level, pd.Series([0.0]), pd.Series([0.0]))
         run(args.level, args.asof, args.refresh)
-    except ValueError as error:
+    except (ValueError, FileNotFoundError) as error:
         print(f"ERROR: {error}")
         sys.exit(1)
 

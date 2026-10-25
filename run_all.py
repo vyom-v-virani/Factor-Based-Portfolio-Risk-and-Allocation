@@ -5,19 +5,19 @@ import subprocess
 import sys
 
 import config
+from data import load_ff_factors, load_prices
 
 parser = argparse.ArgumentParser(description="Run Phases 1 to 7 in order.")
-parser.add_argument("--refresh", action="store_true", help="delete the cached downloads so the data is downloaded again")
+parser.add_argument("--refresh", action="store_true", help="download fresh data and overwrite the data snapshot first")
 args = parser.parse_args()
 
 project_dir = os.path.dirname(os.path.abspath(__file__))
 os.chdir(project_dir)
 
-if args.refresh and os.path.isdir(config.CACHE_DIR):
-    for name in os.listdir(config.CACHE_DIR):
-        if name.endswith(".parquet"):
-            os.remove(os.path.join(config.CACHE_DIR, name))
-            print(f"Removed cached file {name}")
+if args.refresh:
+    load_prices(refresh=True)
+    load_ff_factors(refresh=True)
+    print(f"Downloaded fresh prices and factors; overwrote {config.SNAPSHOT_DIR}/")
 
 results = []
 for phase in range(1, 8):

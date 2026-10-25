@@ -1,8 +1,9 @@
 import numpy as np
 import pandas as pd
+import pytest
 
 import config
-from data import train_test_split
+from data import load_ff_factors, load_prices, train_test_split
 
 
 def make_dataset(n_days):
@@ -23,3 +24,11 @@ def test_train_dates_are_all_before_test_dates():
         assert (train[name].index.values[:, None] < test[name].index.values[None, :]).all()
         assert len(train[name]) + len(test[name]) == 200
     assert len(train["returns"]) == int(200 * config.TRAIN_FRAC)
+
+
+def test_missing_snapshot_raises_a_clear_error_instead_of_downloading(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "SNAPSHOT_DIR", str(tmp_path / "no_such_snapshot"))
+    with pytest.raises(FileNotFoundError, match="Data snapshot file"):
+        load_prices()
+    with pytest.raises(FileNotFoundError, match="Data snapshot file"):
+        load_ff_factors()

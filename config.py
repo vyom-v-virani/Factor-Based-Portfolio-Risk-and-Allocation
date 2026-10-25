@@ -7,7 +7,7 @@ START_DATE = "2014-01-01"
 END_DATE = None  # None means today
 TRAIN_FRAC = 0.70
 TRADING_DAYS = 252
-CACHE_DIR = "data_cache"
+SNAPSHOT_DIR = "data_snapshot"  # committed price and factor files; downloaded again only with --refresh
 OUTPUT_DIR = "outputs"
 FF_URL = "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/F-F_Research_Data_Factors_daily_CSV.zip"
 
