@@ -7,7 +7,6 @@ portfolios, maps a user-chosen **1-5 risk dial** onto a blend of a conservative 
 dial and its benchmarks in a **walk-forward backtest** with drifting weights and transaction costs. Every phase prints PASS/FAIL
 sanity checks, and all results are written to `outputs/`.
 
-> This is a research and teaching project, not investment advice (see [Limitations](#limitations)).
 
 ## Quick start
 
